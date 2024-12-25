@@ -1,0 +1,105 @@
+--[[
+    视图/非视图节点接口
+    只需实现该接口即可将子类加入到场景中通过定义的生命周期函数进行
+    适当的时机进行构建和清理
+--]]
+
+local UINode = class("UINode", ui.UIObject);
+local luaWidget = {}
+function UINode:ctor()
+    UINode.super.ctor(self);
+
+    self.children = {};
+    self.name = "__DEFAULT_NODE_NAME__";
+    self.parent = nil;
+    self:InitLuawidget()
+end
+
+function UINode:getName()
+    return self.name;
+end
+
+function UINode:setName(newName)
+    self.name = newName;
+end
+
+function UINode:setParent(p)
+    self.parent = p;
+end
+
+function UINode:onEnter()
+    UINode.super.onEnter(self);
+
+    for i,v in ipairs(self.children) do
+        v:onEnter();
+    end
+end
+
+function UINode:onExit()
+    UINode.super.onExit(self);
+
+    for i,v in ipairs(self.children) do
+        v:onExit();
+    end
+
+    self:removeAllEvents();
+end
+
+function UINode:addNode(node)
+    table.insert(self.children, node);
+    node:setParent(self);
+    node:onEnter();
+    return node;
+end
+
+function UINode:removeNode(node)
+    for i,v in ipairs(self.children) do
+        if v == node then
+            table.remove(self.children, i);
+            node:onExit();
+            node:setParent(nil);
+            return;
+        end
+    end
+    coli.log.warn("Not found node.", node:getName());
+end
+
+-- 初始化Unity关联Lua的控件注册列表
+function UINode:InitLuawidget()
+    luaWidget[typeof(UnityEngine.UI.Button)] = function(r) return self:addNode(ui.Button(r)) end;
+    luaWidget[typeof(Runtime.TabMenu)] = function(r) return self:addNode(ui.TabMenu(r)) end;
+    luaWidget[typeof(UnityEngine.UI.InputField)] = function (r) return self:addNode(ui.InputField(r)) end;
+    luaWidget[typeof(UnityEngine.UI.Toggle)] = function(r) return self:addNode(ui.Toggle(r)) end;
+    luaWidget[typeof(UnityEngine.UI.Text)] = function(r) return self:addNode(ui.Text(r)) end;
+    luaWidget[typeof(UnityEngine.UI.Image)] = function(r) return self:addNode(ui.Image(r)) end;
+    luaWidget[typeof(UnityEngine.UI.Slider)] = function(r) return self:addNode(ui.Slider(r)) end;
+    luaWidget[typeof(UnityEngine.UI.RawImage)] = function(r) return self:addNode(ui.RawImage(r)) end;
+    luaWidget[typeof(Runtime.DropdownExtend)] = function(r) return self:addNode(ui.Dropdown(r)) end;
+    luaWidget[typeof(Runtime.LuaFSVListView)] = function(r) return ui.FSVListView(r):addTo(self) end;
+    luaWidget[typeof(Runtime.LuaFSVGridView)] = function(r) return ui.FSVGridView(r):addTo(self) end;
+    luaWidget[typeof(Runtime.LuaFSVPageView)] = function(r) return ui.FSVPageView(r):addTo(self) end;
+    luaWidget[typeof(Runtime.UISwitch)] = function(r) return ui.Switch(r):addTo(self) end;
+    luaWidget[typeof(Runtime.LuaOSATableAdapter)] = function(r) return  ui.Table(r):addTo(self) end;
+    luaWidget[typeof(Runtime.LuaSSVListView)] = function(r) return ui.SSVListView(r):addTo(self) end;
+    luaWidget[typeof(Runtime.LuaSSVListPullDownView)] = function(r) return ui.SSVListPullDownView(r):addTo(self) end;
+    luaWidget[typeof(Runtime.LuaSSVListPullTopView)] = function(r) return ui.SSVListPullTopView(r):addTo(self) end;
+end
+--[[
+    递归搜索节点，返回第一次匹配name的节点（因此需要注意命名的唯一性）。
+    
+    @root 起始节点
+    @name 搜索的节点名称
+    @com  (Option)节点组件，如果为nil将会返回Transform/RectTransform
+--]]
+function UINode:find(...)
+    local ret = ui.utils.find(ui.utils.unpack(...));
+    if ret then
+        local type = ret:GetType();
+        local fun = luaWidget[type];
+        if fun then ret = fun(ret); end
+    end
+
+    return ret;
+end
+
+ui.UINode = UINode;

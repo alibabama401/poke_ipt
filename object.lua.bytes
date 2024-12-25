@@ -1,0 +1,109 @@
+--[[
+    UIObject
+--]]
+
+local UIObject = class("UIObject");
+
+function UIObject:ctor()
+    self.allListenEvents = {};
+    self.__timers = {};
+    self.hashcode = (os.time() + math.random());
+end
+
+function UIObject:onEnter()
+end
+
+function UIObject:onExit()
+    self:removeAllEvents();
+    self:removeAllTimers();
+end
+
+function UIObject:destroy()
+end
+
+-- 开启指定监听事件
+function UIObject:on(...)
+    local o = coli.eventManager.addObserver(self, ...);
+    table.insert(self.allListenEvents, o);
+    return o;
+end
+
+-- 关闭指定事件监听
+-- 如果o为ObserveableEvent对象，将移除指定Observer
+-- 如果o为EventName，将移除第一个匹配的Observer
+function UIObject:off(o)
+    local i = nil;
+    if instanceof(o, "ObserveableEvent") then
+        i = table.indexOf(self.allListenEvents, o);
+    else
+        local _ = nil;
+        _, i = table.findif(self.allListenEvents, function(v) return v.event == o end);
+    end
+    if i ~= -1 then
+        self.allListenEvents[i]:unregister();
+        table.remove(self.allListenEvents, i);
+    end
+end
+
+-- 发送指定事件
+function UIObject:emit(eventName, params)
+    coli.eventManager.notify(eventName, params);
+end
+
+-- 移除所有事件监听
+function UIObject:removeAllEvents()
+    for _,v in ipairs(self.allListenEvents) do
+        v:unregister();
+    end
+    self.allListenEvents = {};
+end
+
+-- 处理事件
+function UIObject:handleEvent(event, params)
+
+end
+
+-- 对象不使用奖被缓存
+function UIObject:onUnuse()
+end
+
+-- 对象重用
+-- @params 构造参数
+function UIObject:onReuse(params)
+end
+
+-- 创建超时定时器
+-- @timeout 超时时间
+function UIObject:createTimeout(func, timeout)
+    local t = coli.setTimeout(func, timeout);
+    self.__timers[t.hashcode] = t;
+    return t;
+end
+
+-- 创建循环间隔计时器
+-- @interval 间隔时间
+function UIObject:createInterval(func, interval)
+    local t = coli.setInterval(func, interval);
+    self.__timers[t.hashcode] = t;
+    return t;
+end
+
+-- 移除计时器  -- 返回删除对象
+function UIObject:removeTimer(timer)
+    if timer == nil then return false end;
+    local v = table.removekey(self.__timers, timer.hashcode);
+    coli.clearTimeout(timer);
+    return v;  
+end
+
+-- 移除所有计时器
+function UIObject:removeAllTimers()
+    for k,t in pairs(self.__timers) do
+        if t ~= nil then
+            self:removeTimer(t);
+        end
+    end
+    self.__timers = {};
+end
+
+ui.UIObject = UIObject;

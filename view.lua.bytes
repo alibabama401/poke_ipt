@@ -1,0 +1,730 @@
+
+ui = ui or {};
+
+local UIView = class("UIView", ui.UINode);
+
+--[[
+    视图构造函数，纯粹处理数据相关操作。不要在构造函数中对ui元素进行操作
+    因为这时还未实例化。对ui元素操作的最佳时机在onEnter.
+
+    @assetBundle 预制所处AB
+    @assetName   预制的资源名
+    @extraParams 额外扩展参数 {uiController=...}
+--]]
+function UIView:ctor(assetBundle, assetName, extraParams)
+    UIView.super.ctor(self);
+
+    self.subViewList = {}; -- 子视图列表。
+    self.parent = nil; -- 父视图，如果是root是没有的。
+    self.assetBundle = assetBundle;
+    self.assetName = assetName;
+    self.extraParams = extraParams;
+    self.name = "";
+
+    -- 解析额外参数
+    self:_parseExtraParams(extraParams);
+end
+
+function UIView:_parseExtraParams(extraParams)
+    if extraParams == nil then
+        return;
+    end
+
+    -- UIController
+    if instanceof(extraParams.uiController, ui.UIController) then
+        self.uiController = extraParams.uiController;
+    elseif (extraParams.uiController) then
+        print(string.format("ERROR: %s is not a UIController", extraParams.uiController.__cname))
+    end
+
+    -- SearchFolder
+    -- 用于本地加载加载资源
+    -- 默认搜索目录：Assets/Modules
+    if extraParams.searchFolder ~= nil and 
+        type(extraParams.searchFolder) == "string" 
+    then
+        self.searchFolder = extraParams.searchFolder;
+    end
+
+    -- 是否可以被缓存
+    if extraParams.canCache then
+        self.canCache = extraParams.canCache;
+    end
+
+    -- 不调整Order
+    if extraParams.dontAdjustOrder then
+        self.dontAdjustOrder = extraParams.dontAdjustOrder;
+    end
+
+    if extraParams.isTop then
+        self.isTop = extraParams.isTop;
+    end
+
+    if extraParams.showActionEffect then
+        self.showActionEffect = extraParams.showActionEffect
+    end
+
+    -- 窗口回弹
+    if extraParams.isAutoRebound then
+        self.isAutoRebound = extraParams.isAutoRebound;
+    end
+
+    -- 是否是弹窗
+    self.isPopup = coli.utils.ternary(extraParams.isPopup == nil, true, extraParams.isPopup);
+end
+
+-- 获取当前ui对象
+function UIView:getUI()
+    return self.uiGameObject;
+end
+
+function UIView:getUITransform()
+    return self.uiTransform;
+end
+
+-- 获取父视图对象
+function UIView:getParentView()
+    return self.parent;
+end
+
+function UIView:setName(name)
+    if self.uiGameObject then
+        self.uiGameObject.name = name;
+    end
+    self.name = name;
+end
+
+function UIView:setActive(v)
+    self.uiGameObject:SetActive(v);
+end
+
+function UIView:getName()
+    return self.name;
+end
+
+--- UI Async
+function UIView:loadAssetAsync()
+    local abLoader = coli.resManager.loadAssetBundleAsync(self.assetBundle);
+    while abLoader.IsCompleted == false do
+        -- coroutine.yield(UnityEngine.WaitForEndOfFrame());
+        coroutine.yield(nil);
+    end
+
+    local loader = coli.resManager.loadAssetAsync(self.assetBundle, self.assetName);
+    while not loader.IsCompleted do
+        coroutine.yield(nil);
+    end
+
+    if not loader.IsSuccess then
+        coli.log.error(string.format("The loader(%s) is not found in %s", self.assetName, self.assetBundle));
+        return;
+    end
+
+    self.abLoader = abLoader;
+    self.uiObj = loader.Asset;
+    self.isAsync = true;
+end
+--- UI Async
+
+--- UI Query
+function UIView:getChildByName(name)
+    for i,v in ipairs(self.subViewList) do
+        if v:getName() == name then
+            return v;
+        end
+    end
+end
+--- UI Query
+
+function UIView:getChildByCName(cName)
+    for i,v in ipairs(self.subViewList) do
+        if v.__cname == cName then
+            return v;
+        end
+    end
+end
+
+--- get subViewList
+function UIView:getSubViewList()
+    return self.subViewList;
+end
+
+-- UI Warpper
+function UIView:Button(path)
+    local btn = self.uiTransform:GetComponentInPath(path, "Button");
+    return ui.Button(btn);
+end
+
+function UIView:TabMenu(path)
+    local tabMenu = self.uiTransform:GetComponentInPath(path, "TabMenu");
+    return ui.TabMenu(tabMenu);
+end
+-- UI Warpper
+
+--[[
+    设置父视图
+    @parent 父视图
+    @rootPath  实例化节点
+--]]
+function UIView:setParent(parent, rootPath)
+    UIView.super.setParent(self, parent);
+
+    local parentTrans = nil;
+--[[   if instanceof(parent, ui.UIViewEx) then
+        parentTrans = parent:getUITransform();
+    else
+        parentTrans = parent:getUITransform();
+    en
+]]
+    if rootPath then 
+        parentTrans = parent:getUITransform():Find(rootPath);
+    end
+
+    self:make(parentTrans or parent:getUITransform());
+end
+
+-- 显示前配置
+function UIView:preShow()
+    -- 禁用Canva组件
+    local canvas = self.uiGameObject:GetComponent(typeof(UnityEngine.Canvas));
+    if canvas then
+        canvas.enabled = true;
+    end
+
+    -- 禁用GraphicRaycaster组件
+    local raycaster = self.uiGameObject:GetComponent(typeof(UnityEngine.UI.GraphicRaycaster));
+    if raycaster then
+        raycaster.enabled = true;
+    end
+end
+
+-- 隐藏前配置
+function UIView:preHide()
+    if not self.uiGameObject then
+        return;
+    end
+    -- 禁用Canva组件
+    local canvas = self.uiGameObject:GetComponent(typeof(UnityEngine.Canvas));
+    if canvas then
+        canvas.enabled = false;
+    end
+
+    -- 禁用GraphicRaycaster组件
+    local raycaster = self.uiGameObject:GetComponent(typeof(UnityEngine.UI.GraphicRaycaster));
+    if raycaster then
+        raycaster.enabled = false;
+    end
+end
+
+-- 调整当前View的SortingOrder
+function UIView:adjustSortingOrder()
+    if self.dontAdjustOrder then
+        return;
+    end
+
+    if self.isTop then
+        self.subCanvas.sortingOrder = ui.TOP_ORDER;
+        ui.TOP_ORDER = ui.TOP_ORDER + ui.SORTING_ORDER_SPACE;
+    else
+        self.subCanvas.sortingOrder = ui.SORTING_ORDER;
+        table.insert(ui.ORDERS_CACHE, ui.SORTING_ORDER); -- 将新窗口的order放入缓存
+        ui.SORTING_ORDER = ui.SORTING_ORDER + ui.SORTING_ORDER_SPACE;
+    end
+
+    ui.utils.adjustSortingOrderForTarget(self.uiTransform, self.subCanvas);
+    -- local particleRenderers = self.uiTransform:GetComponentsInChildren(typeof(UnityEngine.ParticleSystemRenderer), true);
+    -- for i=0, particleRenderers.Length-1 do
+    --     local renderer = particleRenderers[i];
+    --     renderer.sortingLayerID = self.subCanvas.sortingLayerID;
+    --     renderer.sortingOrder = renderer.sortingOrder + self.subCanvas.sortingOrder;
+    -- end
+
+    -- local canvasChildren = self.uiTransform:GetComponentsInChildren(typeof(UnityEngine.Canvas), true);
+    -- for i=0, canvasChildren.Length-1 do
+    --     local canvas = canvasChildren[i];
+    --     if self.subCanvas ~= canvas then
+    --         canvas.sortingLayerID = self.subCanvas.sortingLayerID;
+    --         canvas.sortingOrder = canvas.sortingOrder + self.subCanvas.sortingOrder;
+    --     end
+    -- end
+end
+
+-- 实例化ui元素并设置一个父节点
+function UIView:make(parent)
+    if self.uiGameObject ~= nil then
+        self:preShow();
+        self:adjustSortingOrder();
+        self.uiTransform:SetParent(parent);
+        return;
+    end
+
+    local uiObj = nil;
+    if self.uiObj then
+        uiObj = self.uiObj;
+    else
+        uiObj = coli.resManager.loadAsset(self.assetBundle, self.assetName, nil, "t:Prefab", self.searchFolder);
+    end
+    
+    if uiObj == nil then
+        coli.log.error(string.format("The uiObj(%s) is not found in %s", self.assetName, self.assetBundle));
+        return;
+    end
+
+    self.uiGameObject = UnityEngine.GameObject.Instantiate(uiObj, parent);
+
+    local luaUIObj = self.uiGameObject:AddComponent(typeof(Runtime.LuaUIObject));
+    luaUIObj:SetStartEvent(function() self:onStart(); end);
+    luaUIObj:SetDestroyEvent(function() self:onDestroy(); end);
+    luaUIObj:SetEnableEvent(function() self:onEnable(); end);
+    luaUIObj:SetDisableEvent(function() self:onDisable(); end);
+
+    local subCanvas = self.uiGameObject:AddComponent(typeof(UnityEngine.Canvas));
+    subCanvas.overrideSorting = not self.dontAdjustOrder;
+    subCanvas.sortingLayerID = UnityEngine.SortingLayer.NameToID("UI");
+    self.subCanvas = subCanvas;
+
+    self.uiGameObject:AddComponent(typeof(UnityEngine.UI.GraphicRaycaster));
+    self.uiTransform = self.uiGameObject.transform;
+    self.name = self.uiGameObject.name;
+    self.ui = ui.Finder.new(self.uiTransform);
+
+    self:adjustSortingOrder();
+end
+
+--[[
+    视图生命周期: onEnter 加入视图成功后被调用。
+    如果有子视图会先调用子视图的onEnter。
+    * 子类继承必须手动调用
+    * 一般情况下最好不要手动去触发
+--]]
+function UIView:onEnter()
+    -- 恢复回来
+    self.isDestroy = false;
+
+    for _,v in ipairs(self.subViewList) do
+        v:onEnter();
+    end
+
+    self.ui:onEnter();
+
+    -- 手动执行一次语言切换
+    Localization.doLocalizationText(self.uiTransform);
+
+    -- 动画表现
+    if self.showActionEffect then
+        local targetName = self.showActionEffect.targetName;
+        local target = self:find(targetName); 
+        self.showActionEffect:show(target, self.sliderComplete);
+    end
+
+    -- 回弹弹窗
+    if self.isAutoRebound then
+        self:destroyRecordPopupView();
+
+        self:on(coli.Events.E_GamePlay_ShowMyOperationPanel):subscribe(function()
+            runningScene:getWindow():recordOpenPopupView(self);
+        end);
+    
+        self:on(coli.Events.E_GamePlay_HideMyOperationPanel):subscribe(function()
+            runningScene:getWindow():recorverPopupView(self);
+        end);
+    end
+
+    -- 刘海偏移
+    self:stretchOffest();
+end
+-- 刘海偏移
+function UIView:stretchOffest()
+    if Runtime.Platform.IsIOS() and not self.isNoStretch then -- 只有iOS才需要顶部刘海偏移
+        local rt = self.uiTransform:GetComponent("RectTransform");
+        ui.utils.topStretchOffest(rt);
+    end
+end
+
+function UIView:onControllerEnter()
+    if self.uiController ~= nil then
+        self.uiController:onEnter();
+    end
+end
+
+--[[
+    启动update更新
+    将当前类的update方法注册到update列表中
+    进行每帧更新操作
+--]]
+function UIView:scheduleUpdate()
+    coli.scheduler.schedule(self, self.update, 0);
+end
+
+--[[
+    注销update
+    onExit后会调用，也可在任何地方调用
+--]]
+function UIView:unscheduleUpdate()
+    coli.scheduler.unschedule(self, self.update);
+end
+
+--[[
+    每帧更新方法
+--]]
+function UIView:update(dt)
+end
+
+--[[
+    视图声明周期: onExit 在从视图中移除成功后被调用。
+    如果有子视图会先调用子视图的onExit。
+    * 子类继承必须手动调用
+    * 一般情况下最好不要手动去触发
+--]]
+function UIView:onExit()
+    -- 首先执行当前View的Controller的OnExit
+    self:onControllerExit();
+
+    for i,v in ipairs(self.subViewList) do
+        v:onExit();
+    end
+    self:unscheduleUpdate(); -- 停止更新调用
+
+    -- 如果不调整Order不需要递减
+    if not self.dontAdjustOrder then
+        if self.isTop then
+            ui.TOP_ORDER = math.max(ui.TOP_ORDER - ui.SORTING_ORDER_SPACE, 1);
+        else
+            --ui.SORTING_ORDER = math.max(ui.SORTING_ORDER - ui.SORTING_ORDER_SPACE, 1);
+            -- ui.SORTING_ORDER代表的是下一个窗口的order，因此应该是当前最上方窗口的order加上space
+            local currOrder = self.subCanvas.sortingOrder;
+            local index = table.indexOf(ui.ORDERS_CACHE, currOrder);
+            if index ~= -1 then
+                table.remove(ui.ORDERS_CACHE, index); -- 删除缓存中对应当前窗口的order
+            end
+            if #ui.ORDERS_CACHE > 0 then
+                ui.SORTING_ORDER = ui.ORDERS_CACHE[#ui.ORDERS_CACHE] + ui.SORTING_ORDER_SPACE;
+            else
+                ui.SORTING_ORDER = ui.SORTING_ORDER_SPACE;
+            end
+        end
+    end
+
+    self.ui:onExit();
+
+    -- 面上节点的onExit
+    UIView.super.onExit(self);
+end
+
+function UIView:onControllerExit()
+    if self.uiController ~= nil then
+        self.uiController:onExit();
+    end
+end
+
+-- Unity生命周期函数
+function UIView:onStart()
+    -- print("UIView:onStart");
+    if self.uiController and self.uiController.onStart then
+        self.uiController:onStart();
+    end
+end
+
+function UIView:onDestroy()
+    -- 释放资源
+    if self.isAsync and self.abLoader then
+        self.abLoader:Release();
+        self.abLoader = nil;
+    end
+end
+
+function UIView:onEnable()
+    -- print("UIView:onEnable");
+end
+function UIView:onDisable()
+    -- print("UIView:onDisable");
+end
+
+--[[
+    添加一个UIView
+    @subView 子视图
+    @order   渲染层级
+--]] 
+function UIView:addSubView(subView, rootPath)
+    subView:setParent(self, rootPath);
+    table.insert(self.subViewList, subView);
+    subView:onEnter();
+    subView:onControllerEnter();
+    return subView;
+end
+
+function UIView:onReuse(parmas)
+    if self.uiController then
+        self.uiController:onReuse(parmas);
+    else
+        -- log.warn(string.format("%s:onResue：访问的controller为空", self.__cname));
+    end
+end
+
+--[[
+    移除一个UIView
+    @subView 需要被移除子视图对象
+--]] 
+function UIView:removeSubView(subView)
+    local i = table.indexOf(self.subViewList, subView);
+    if i ~= -1 then
+        local rmElement = table.remove(self.subViewList, i);
+        if rmElement ~= nil then
+            rmElement:onExit();
+        end
+    end
+end
+
+--[[
+    从父视图中移除
+--]]
+function UIView:removeFromParent()
+    if not self.parent then
+        return;
+    end
+    self.parent:removeSubView(self);
+end
+
+--[[
+    销毁函数
+--]]
+function UIView:_destroyOrCache(isClean)
+    if not isClean and self.canCache and runningScene and runningScene:getCacheCanvas() then
+        self.uiTransform:SetParent(runningScene:getCacheCanvas().transform);
+        self.uiTransform.localScale = UnityEngine.Vector3.zero;
+        self:onUnuse();
+        runningScene.pool:push(self);
+    else
+        if self.ui then
+            self.ui:destroy();
+            self.ui = nil;
+        end
+
+        UnityEngine.GameObject.Destroy(self.uiGameObject);
+        
+        self.uiGameObject = nil;
+        self.uiObj = nil;
+        self.uiController = nil;
+
+    end
+end
+
+function UIView:destroyImmediately(isClean)
+    local tmp = self.showActionEffect;
+    self.showActionEffect = nil;
+    self:destroy(isClean);
+    self.showActionEffect = tmp;
+end
+
+function UIView:destroy(isClean)
+    -- 不需要重复执行
+    if self.isDestroy then
+        return;
+    end
+
+    local del = function()
+        -- 标记已经销毁或已经被缓存了
+        self.isDestroy = true;
+        self.isClean = isClean;
+
+        -- 首先从父视图中移除
+        self:removeFromParent();
+
+        -- 隐藏操作
+        self:preHide();
+        
+        -- 清理UI/缓存
+        for i,v in ipairs(self.subViewList) do
+            v:_destroyOrCache(isClean);
+        end
+        self:_destroyOrCache();
+
+        if self.destroyCallback then
+            self.destroyCallback();
+        end
+    end
+    
+    -- 如果有动效
+    if self.showActionEffect then
+        local targetName = self.showActionEffect.targetName;
+        local target = self:find(targetName); 
+        self.showActionEffect:hide(target, function()
+            del();
+        end);
+    else
+        del();
+    end
+end
+
+--[[
+    处理场景回退参数
+--]]
+function UIView:processSceneBackParams(params)
+
+end
+
+
+--[[
+    将Unity Transform转换为UIViewEx
+    @trans Transform对象
+--]]
+function UIView:asView(trans)
+    local view = ui.UIViewEx.new(trans);
+    self:addNode(view);
+    return view;
+end
+
+--[[
+    递归搜索节点，返回第一次匹配name的节点（因此需要注意命名的唯一性）。
+
+    * 1个参数时(name)
+    * 2个参数时(root, name) or (name, com)
+    * 3个参数时(root, name, com) or (name, com, strategy)
+    * 4个参数时(root, name, com, strategy)
+    @root 起始节点
+    @name 搜索的节点名称
+    @com  (Option)节点组件，如果为nil将会返回Transform/RectTransform
+--]]
+function UIView:find(...)
+    local argc = select('#', ...);
+    if type(select(1, ...)) == "string" then
+        return UIView.super.find(self, self.uiTransform, ui.utils.unpack(...));
+    end
+    return UIView.super.find(self, ui.utils.unpack(...));
+end
+
+-- 支持将uiTransform转换为Button
+function UIView:asButton()
+    return ui.Button(self.uiTransform):addTo(self);
+end
+
+-- 支持uiTransform转换为Image
+function UIView:asImage()
+    return ui.Image(self.uiTransform):addTo(self);
+end
+
+-- 清理所有子视图
+function UIView:removeAllChildren(isCleanup)
+    for i,v in ipairs(self.subViewList) do
+        v:destroy();
+    end
+end
+
+-- 添加到指定父节点
+function UIView:addTo(parentView)
+    if self.parent then
+        self.parent:removeSubView(self);
+        self.parent = nil;
+    end
+
+    if parentView.addSubView then
+        parentView:addSubView(self);
+    else
+        parentView:addNode(self);
+    end
+    return self;
+end
+
+function UIView:destroyRecordPopupView()
+    local window = runningScene:getWindow();
+    if window.tryDestroyRecordPopupView then window:tryDestroyRecordPopupView(self); end
+end
+
+function UIView:addShowCallback(callback)
+    self.showCallback = callback;
+end
+
+function UIView:setViewShow()
+    self.uiTransform.localScale = UnityEngine.Vector3.one;
+    coli.utils.hideNetLoading();
+    if self.showCallback ~= nil then
+        self.showCallback();
+    end
+end
+-- 不销毁单纯隐藏窗口减少drawcall
+function UIView:hideFullWindow()
+    self.uiTransform.localScale = UnityEngine.Vector3.zero;
+end
+function UIView:showFullWindow()
+    self.uiTransform.localScale = UnityEngine.Vector3.one;
+    self:onOpen();
+end
+-- 不销毁重新激活界面 调用方法
+function UIView:onOpen()
+end
+
+
+function UIView:addDestroyCallback(callback)
+    self.destroyCallback = callback;
+    return self;
+end
+function UIView:delDestroyCallback()
+    self.destroyCallback = nil;
+    return self;
+end
+-- 设置Controller对象
+function UIView:setController( controller )
+    self.uiController = controller;
+    return self;
+end
+-- 设置缩放动画
+---@param nodeName 挂载节点名称 默认值Node
+function UIView:setZoomEffect(nodeName )
+    self.showActionEffect = ui.PopupAction.new({targetName = nodeName or "Node"})
+    return self;
+end
+-- 设置左侧打开界面
+function UIView:setSlidePopupLeft(dontnotchWidth, nodeName)
+    self.showActionEffect = ui.SidePopupAction.new({targetName = nodeName or "Node", dontnotchWidth = dontnotchWidth or false ,isLeft = true})
+    return self;
+end
+-- 设置右侧打开界面
+function UIView:setSlidePopupRight(dontnotchWidth, nodeName)
+    self.showActionEffect = ui.SidePopupAction.new({targetName = nodeName or "Node", dontnotchWidth = dontnotchWidth or false ,isLeft = false})
+    return self;
+end
+-- 设置从上往下打开界面
+function UIView:setTopSlide(dontnotchWidth, nodeName)
+    self.showActionEffect = ui.BottomToTopAction.new({targetName = nodeName or "Node", dontnotchWidth = dontnotchWidth or false ,isTop = true})
+    return self;
+end
+-- 设置从下往上打开界面
+function UIView:setBottomSlide(dontnotchWidth, nodeName)
+    self.showActionEffect = ui.BottomToTopAction.new({targetName = nodeName or "Node", dontnotchWidth = dontnotchWidth or false ,isTop = false})
+    return self;
+end
+
+
+-- 设置界面为缓存界面
+function UIView:setCanCache()
+    self.canCache = true;
+    return self;
+end
+-- 设置界面不需要调整深度
+function UIView:setDontAdjustOrder()
+    self.dontAdjustOrder = true;
+    return self;
+end
+-- 设置是否为顶部界面
+function UIView:setIsTop()
+    self.isTop = true;
+    return self;
+end
+-- 默认搜索目录：Assets/Modules
+function UIView:setSearchFolder(folder)
+    self.searchFolder = folder;
+    return self;
+end
+-- 设置不进行刘海偏移
+function UIView:setNoStretch()
+    self.isNoStretch = true;
+    return self;
+end
+-- 设置打开页面动画结束回调事件
+function UIView:setSliderComplete(cb)
+    self.sliderComplete = cb;
+    return self;
+end
+
+
+ui.UIView = UIView;

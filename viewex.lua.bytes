@@ -1,0 +1,34 @@
+--[[
+    特殊View,由已经存在场景中的对象构建
+--]]
+
+local View = class("UIViewEx", ui.UIView);
+
+function View:ctor(uiTrans, params)
+    View.super.ctor(self, "", "", params);
+    self.uiTransform = uiTrans;
+    self.uiGameObject = uiTrans.gameObject;
+    self.ui = ui.Finder.new(uiTrans);
+end
+
+function View:setParent(parent)
+    self.parent = parent;
+end
+
+function View:onExit()
+    View.super.super.onExit(self);
+
+    for i,v in ipairs(self.subViewList) do
+        v:onExit();
+    end
+    
+    self.ui:onExit();
+    
+    self:unscheduleUpdate(); -- 停止更新调用
+end
+
+function View:stretchOffest()
+    -- UIViewEx  为UIView的附加界面，不需要刘海偏移
+end
+
+ui.UIViewEx = View;

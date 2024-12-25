@@ -1,0 +1,71 @@
+
+ui = ui or {};
+
+
+--[[
+    1. 至少包含一个View
+--]]
+local UIWindow = class("UIWindow", ui.UINode);
+
+function UIWindow:ctor(rootView)
+    UIWindow.super.ctor(self);
+    
+    self.rootView = nil; -- 当前场景UI节点树第一个界面
+    self.canvas = nil;   -- 当前场景树RootCanvas
+    self.root = nil;     -- 当前场景树Root，它是将RootCanvas作为特殊的View
+
+    if runningScene ~= nil then
+        runningScene:setWindow(self);
+    end
+
+    self:setRootView(rootView);
+    self:onEnter();
+end
+
+function UIWindow:setRootView(rootView)
+    self.rootView = rootView;
+    if self.canvas == nil then
+        self.canvas = ui.utils.canvas();
+        self.canvas:GetComponent("Canvas").sortingOrder = 2;
+    end
+
+    if self.root == nil then
+        self.root = ui.UIViewEx.new(self.canvas.transform);
+    end
+    self.root:addSubView(self.rootView);
+
+    -- 如果当前场景存在回退参数，那么就让root视图执行处理它。
+    if runningScene ~= nil then
+        local backParams = runningScene:getBackParams();
+        if backParams ~= nil then
+            self.rootView:processSceneBackParams(backParams);
+        end
+        runningScene:clearBackParams();
+    end
+end
+
+function UIWindow:getRootView()
+    return self.root;
+end
+
+function UIWindow:getCanvas()
+    return self.canvas;
+end
+
+function UIWindow:destroy()
+    if self.root ~= nil then
+        self.root:onExit();
+        self.root = nil;
+    end
+    self:onExit();
+end
+
+function UIWindow:onExit()
+    UIWindow.super.onExit(self);
+end
+
+function UIWindow:onEnter()
+    UIWindow.super.onEnter(self);
+end
+
+ui.UIWindow = UIWindow;

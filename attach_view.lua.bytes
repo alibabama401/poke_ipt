@@ -1,0 +1,102 @@
+--[[
+    用继承UIView 的 addSubView 方法添加，动态附加View适用于，不是独立的窗口
+--]]
+
+local View = class("AttachView", ui.UINode);
+
+function View:ctor(assetBundle, assetName, parent)
+    View.super.ctor(self);
+    self.assetBundle = assetBundle;
+    self.assetName = assetName;
+    self:clone(parent);
+    self.onFinished = nil;
+end
+
+-------------------------------- 必须是实现方法 ---------------------------
+function View:getName()
+    return self.name;
+end
+
+function View:setParent(parent, rootPath)
+    self.pView = parent;
+end
+
+function View:onControllerEnter()
+end
+
+function View:onEnter()
+end
+
+function View:onExit()
+    View.super.onExit(self);
+    self.ui:onExit();
+end
+
+function View:_destroyOrCache()
+
+end
+
+function View:destroy()
+    self.ui:destroy();
+    self.ui = nil;
+    self.uiGameObject = nil;
+    self.uiTransform = nil;
+end
+
+function View:find(...)
+    local argc = select('#', ...);
+    if type(select(1, ...)) == "string" then
+        return View.super.find(self, self.uiTransform, ui.utils.unpack(...));
+    end
+    return View.super.find(self, ui.utils.unpack(...));
+end
+
+--------------------------------------------------------------------------
+function View:clone(parent)
+    local clone = coli.resManager.loadAsset(self.assetBundle, self.assetName, nil, "t:Prefab", self.searchFolder);
+    if clone == nil then
+        coli.log.error(string.format("The uiObj(%s) is not found in %s", self.assetName, self.assetBundle));
+        return;
+    end
+
+    self.uiGameObject = UnityEngine.GameObject.Instantiate(clone, parent);
+    self.uiTransform = self.uiGameObject.transform;
+    self.name = self.uiGameObject.name;
+    self.ui = ui.Finder.new(self.uiTransform);
+end
+
+function View:onPlay()
+    self:onOpen();
+    self.uiTransform.anchoredPosition = self.movePos or UnityEngine.Vector2(-451, 0);
+    self.doTweenPlayOver = false;
+    self.uiTransform:DOAnchorPosX(0, 0.4):OnComplete(function()
+        self.doTweenPlayOver = true;
+        if self.onFinished then
+            self.onFinished();
+        end
+    end);
+end
+
+function View:onOpen()
+    self.uiGameObject:SetActive(true);
+end
+
+function View:onClose()
+    self.uiGameObject:SetActive(false);
+end
+
+function View:onRestart()
+    self.uiGameObject:SetActive(true);
+end
+
+function View:setOnFinished(fun)
+    self.onFinished = fun;
+    return self;
+end
+-- 设置滑动偏移量的起始位置，起始位置 到 0
+function View:setMovePosition( pos )
+    self.movePos = pos
+    return self;
+end
+
+ui.AttachView = View;

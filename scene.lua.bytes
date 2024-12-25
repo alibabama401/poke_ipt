@@ -1,0 +1,194 @@
+
+ui = ui or {};
+
+local pool = ui.pool;
+
+--[[
+    场景类
+    一个场景只有一个运行中的场景类
+    runningScene 是全局可访问正在运行中的UIScene的实例对象。
+    * 请不要随意去调用和修改runningScene中的方法和属性
+
+    场景的切换使用RunScene这个全局方法
+--]]
+local UIScene = class("UIScene");
+function UIScene:ctor(backParams)
+    self.loadedResList = {}; -- 记录当前场景所加载的资源，格式为{{name = "xxx"}}
+    self.window = nil;
+    self.backParams = backParams;
+    self.totalResCount = 0;
+    self.cacheCavas = nil; -- 用于缓存UI
+    self.pool = ui.pool.new();
+end
+
+function UIScene:getBackParams()
+    return self.backParams;
+end
+
+function UIScene:clearBackParams()
+    self.backParams = nil;
+end
+
+function UIScene:setWindow(window)
+    self.window = window;
+end
+
+function UIScene:getWindow()
+    return self.window;
+end
+
+-- 用于记录已经加载的资源，子类不需要直接访问列表
+function UIScene:recordLoadedRes(resInfo)
+    self.loadedResList = self.loadedResList or {};
+    table.insert(self.loadedResList, resInfo);
+end
+
+-- 返回已经记录加载的资源列表
+function UIScene:getLoadedResList()
+    return self.loadedResList;
+end
+
+function UIScene:getLoadResProgress()
+    return #self.loadedResList / self.totalResCount;
+end
+
+function UIScene:isLoadResCompleted()
+    return self.totalResCount == #self.loadedResList;
+end
+
+function UIScene:onTranslateEnter()
+
+end
+
+function UIScene:onTranslateExit()
+
+end
+
+function UIScene:doLoadRes(resList)
+    -- 放入通用资源
+    local common = {
+        {name = coli.ab.E_Common_Atlas},
+        {name = coli.ab.E_Common_Prefabs},
+        {name = coli.ab.E_Common_BG},
+        
+        {name = coli.ab.E_Achievement_Prefabs},
+        {name = coli.ab.E_Achievement_Atlas},
+    };
+    for i,v in ipairs(common) do
+        table.insert(resList, v);
+    end
+    
+    -- 加载场景资源
+    self.totalResCount = #resList;
+    local loadList = {};
+    for i,v in ipairs(resList) do
+        if not coli.ab.loadted[v.name] then
+            local loader = coli.resManager.loadAssetBundleAsync(v.name);
+            table.insert(loadList, {loader, v});
+        end
+    end
+
+    for _, t in ipairs(loadList) do
+        local loader = t[1];
+        local v = t[2];
+        while loader.IsCompleted == false do
+            coroutine.yield(nil);
+        end
+
+        if loader.IsSuccess then
+            v.loader = loader;
+            self:recordLoadedRes(v);
+
+            if self.loadResProgressCB then
+                self.loadResProgressCB(self:getLoadResProgress());
+            end
+            coli.ab.loadted[v.name] = loader;
+        else
+            coli.log.error("load error: ", v.name);
+        end
+    end
+    
+    -- 加载常用Atlas
+    coli.ctx:loadTPAtlas();
+end
+
+function UIScene:doUnloadRes()
+    local loadedList = self:getLoadedResList();
+    for i,v in ipairs(loadedList) do
+        if v.bNeedRelease then -- 默认不释放, 暂时不改之前的逻辑, 只释放新增的 2021-10-25
+            coli.ab.loadted[v.name] = nil;
+            coli.resManager.unloadAssetBundle(v.loader);
+        end
+    end
+    self.loadedResList = {};
+    self.totalResCount = 0;
+end
+
+function UIScene:setLoadResProgressCB(func)
+    self.loadResProgressCB = func;
+end
+
+-- 在这里加载资源，在协程中执行
+function UIScene:loadRes()
+end
+
+-- 在这里释放资源
+function UIScene:unloadRes()
+    self:doUnloadRes();
+end
+
+-- 在这里显示新场景的内容和执行Unity SceneManager相关函数
+function UIScene:showScene()
+end
+
+function UIScene:destroy()
+    if self.window ~= nil then
+        self.window:destroy();
+        self.window = nil;
+    end
+    
+    -- 清理当前场景缓存
+    -- self.pool:clearAll();
+end
+
+-- 创建用于缓存UI的Canvas
+function UIScene:createCacheCanvas()
+    local RectTransform = UnityEngine.RectTransform;
+    local cacheCavas = UnityEngine.GameObject("__CacheCanvas");
+    cacheCavas:AddComponent(typeof(UnityEngine.Canvas));
+    cacheCavas.transform:SetInsetAndSizeFromParentEdge(RectTransform.Edge.Left, 0, 0);
+    cacheCavas.transform:SetInsetAndSizeFromParentEdge(RectTransform.Edge.Top, 0, 0);
+    cacheCavas.transform.anchorMin = UnityEngine.Vector2.zero;
+    cacheCavas.transform.anchorMax = UnityEngine.Vector2.one;
+
+    cacheCavas.transform:SetParent(ui.utils.canvas().transform);
+
+    cacheCavas.transform.localScale = UnityEngine.Vector3.one;
+    cacheCavas.transform.offsetMin = UnityEngine.Vector2.zero;
+    cacheCavas.transform.offsetMax = UnityEngine.Vector2.zero;
+    cacheCavas.transform.localPosition = UnityEngine.Vector3.zero;
+
+    self.cacheCavas = cacheCavas;
+end
+
+function UIScene:getCacheCanvas()
+    return self.cacheCavas;
+end
+
+function UIScene:addRepSceneCompleteCallback(completeCallback)
+    self.replaceCompleteCb = self.replaceCompleteCb or {};
+    self.replaceCompleteCb[#self.replaceCompleteCb + 1] = completeCallback;
+end
+
+function UIScene:impRepSceneComplete()
+    if self.replaceCompleteCb then
+        local count = #self.replaceCompleteCb;
+        for i=count,1,1 do
+            self.replaceCompleteCb[i]();
+            self.replaceCompleteCb[i] = nil;
+        end
+    end
+    self.replaceCompleteCb = nil;
+end
+
+ui.UIScene = UIScene;

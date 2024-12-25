@@ -1,0 +1,18 @@
+
+ui = ui or {};
+
+local UIController = class("UIController", ui.UIObject);
+function UIController:ctor(view)
+    UIController.super.ctor(self);
+    self.uiview = view;
+end
+
+function UIController:onEnter()
+    UIController.super.onEnter(self);
+end
+
+function UIController:onExit()
+    UIController.super.onExit(self);
+end
+
+ui.UIController = UIController;
