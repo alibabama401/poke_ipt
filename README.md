@@ -1,4 +1,5 @@
-德州扑克赛事app源代码出售，比赛打门牌app，可以支持国内所有的德州比赛，类似CPG等产品。TG：@alibabama401
+德州扑克赛事app源代码出售，比赛打门牌app，可以支持国内所有的德州比赛，包括线下德州赛事，类似CPG等产品。TG：@alibabama401
+
 ![04天眼系统1](https://github.com/user-attachments/assets/45d8cad8-0b9e-4013-8623-4aa155942712)
 ![0首页](https://github.com/user-attachments/assets/9ea3f691-e052-4713-9cdf-eb7799ab5290)
 ![0现场赛事](https://github.com/user-attachments/assets/af2a274f-6a37-4926-a6f0-07cfac2b475e)
